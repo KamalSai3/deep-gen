@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 interface AuthContextType {
   user: User | null
@@ -17,13 +18,19 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const router = useRouter()
 
   useEffect(() => {
     // Get initial session
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
-      setLoading(false)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        setUser(session?.user ?? null)
+      } catch (error) {
+        console.error('Error getting session:', error)
+      } finally {
+        setLoading(false)
+      }
     }
 
     getInitialSession()
@@ -33,16 +40,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async (event, session) => {
         setUser(session?.user ?? null)
         setLoading(false)
+        
+        // Handle sign out
+        if (event === 'SIGNED_OUT') {
+          router.push('/')
+        }
       }
     )
 
     return () => subscription?.unsubscribe()
-  }, [])
+  }, [router])
 
   const signUp = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`
+      }
     })
     if (error) throw error
   }
@@ -58,6 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
+    // The onAuthStateChange will handle the redirect
   }
 
   const value = {
